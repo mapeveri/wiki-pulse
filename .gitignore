@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Secrets / local env
+.env
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Go
+crawler/bin/
+*.exe
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+dbt/profiles.yml
+dbt/.user.yml
+
+# Data & logs
+data/
+*.log
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
