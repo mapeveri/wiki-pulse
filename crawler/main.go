@@ -1,10 +1,13 @@
 // Command crawler fetches content structure metrics for the tracked articles
-// and loads them into the ClickHouse raw layer.
+// and publishes one event per article to Redpanda.
+//
+// The sink (ingestion.sink) is the component that writes these events into the
+// ClickHouse raw layer.
 //
 // Usage:
 //
 //	crawler --topics-file ingestion/topics.txt
-//	crawler --topics-file ingestion/topics.txt --concurrency 8
+//	crawler --topics-file ingestion/topics.txt --kafka-brokers localhost:9092
 package main
 
 import (
@@ -16,7 +19,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/wikipulse/crawler/internal/clickhouse"
+	"github.com/wikipulse/crawler/internal/kafka"
 	"github.com/wikipulse/crawler/internal/wikipedia"
 )
 
@@ -36,10 +39,8 @@ func run() error {
 		"seo-marketing-analytics-platform/0.1 (https://github.com/your-user/seo-marketing-analytics-platform)",
 		"User-Agent header sent to Wikipedia",
 	)
-	chURL := flag.String("clickhouse-url", "http://localhost:8123", "ClickHouse HTTP endpoint")
-	chDB := flag.String("clickhouse-db", "raw", "ClickHouse database")
-	chUser := flag.String("clickhouse-user", "default", "ClickHouse user")
-	chPass := flag.String("clickhouse-password", "", "ClickHouse password")
+	brokers := flag.String("kafka-brokers", "localhost:9092", "comma-separated Kafka/Redpanda brokers")
+	topic := flag.String("topic", "articles.raw", "target topic")
 	flag.Parse()
 
 	topics, err := readTopics(*topicsFile)
@@ -52,8 +53,9 @@ func run() error {
 
 	ctx := context.Background()
 	client := wikipedia.NewClient(*userAgent)
+	producer := kafka.NewProducer(strings.Split(*brokers, ","), *topic)
+	defer producer.Close()
 
-	articles := make([]wikipedia.Article, 0, len(topics))
 	var (
 		mu       sync.Mutex
 		wg       sync.WaitGroup
@@ -64,45 +66,38 @@ func run() error {
 	for _, topic := range topics {
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(topic string) {
+		go func(article string) {
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			article, err := client.Crawl(ctx, *project, topic)
+			parsed, err := client.Crawl(ctx, *project, article)
 			if err != nil {
 				mu.Lock()
 				failures++
 				mu.Unlock()
-				fmt.Fprintf(os.Stderr, "  %s: %v\n", topic, err)
+				fmt.Fprintf(os.Stderr, "  %s: %v\n", article, err)
 				return
 			}
-			mu.Lock()
-			articles = append(articles, *article)
-			mu.Unlock()
+			if err := producer.Publish(ctx, parsed.Article, parsed); err != nil {
+				mu.Lock()
+				failures++
+				mu.Unlock()
+				fmt.Fprintf(os.Stderr, "  %s: publish failed: %v\n", article, err)
+				return
+			}
 			fmt.Printf("  %s: %d words, %d sections, %d internal links\n",
-				article.Title, article.WordCount, article.SectionCount, article.InternalLinks)
+				parsed.Title, parsed.WordCount, parsed.SectionCount, parsed.InternalLinks)
 		}(topic)
 	}
 	wg.Wait()
 
-	if len(articles) == 0 {
-		return fmt.Errorf("all %d topics failed to crawl", len(topics))
-	}
 	if failures > 0 {
-		fmt.Fprintf(os.Stderr, "%d of %d topics failed (continuing)\n", failures, len(topics))
+		fmt.Fprintf(os.Stderr, "%d of %d topics failed\n", failures, len(topics))
 	}
-
-	cfg := clickhouse.Config{
-		URL:      *chURL,
-		Database: *chDB,
-		User:     *chUser,
-		Password: *chPass,
+	fmt.Printf("Published %d events to %s\n", len(topics)-failures, *topic)
+	if failures == len(topics) {
+		return fmt.Errorf("all topics failed")
 	}
-	if err := clickhouse.InsertArticles(ctx, cfg, articles); err != nil {
-		return err
-	}
-
-	fmt.Printf("Loaded %d articles into %s.articles\n", len(articles), *chDB)
 	return nil
 }
 
