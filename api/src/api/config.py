@@ -20,7 +20,7 @@ class Settings:
     cors_origins: str = "*"
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls) -> Settings:
         return cls(
             clickhouse_host=os.getenv("CLICKHOUSE_HOST", "localhost"),
             clickhouse_port=int(os.getenv("CLICKHOUSE_PORT", "8123")),

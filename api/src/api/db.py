@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Any, Iterable
+from typing import Any
 
 import clickhouse_connect
 from clickhouse_connect.driver.client import Client

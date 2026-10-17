@@ -59,27 +59,26 @@ def _ingest_pageviews(args: argparse.Namespace) -> int:
 
     with httpx.Client(
         headers={"User-Agent": settings.wikimedia_user_agent}, timeout=30.0
-    ) as http:
-        with RunTracker(client, "wikimedia.pageviews") as run:
-            for article in topics:
-                records = fetch_pageviews(
-                    client=http,
-                    project=args.project,
-                    article=article,
-                    start=args.start,
-                    end=args.end,
-                    access=args.access,
-                    agent=args.agent,
-                    granularity=args.granularity,
+    ) as http, RunTracker(client, "wikimedia.pageviews") as run:
+        for article in topics:
+            records = fetch_pageviews(
+                client=http,
+                project=args.project,
+                article=article,
+                start=args.start,
+                end=args.end,
+                access=args.access,
+                agent=args.agent,
+                granularity=args.granularity,
+            )
+            print(f"  {article}: {len(records)} records")
+            for r in records:
+                rows.append(
+                    [r.project, r.article, r.access, r.agent, r.granularity, r.ts, r.views]
                 )
-                print(f"  {article}: {len(records)} records")
-                for r in records:
-                    rows.append(
-                        [r.project, r.article, r.access, r.agent, r.granularity, r.ts, r.views]
-                    )
-            if rows:
-                client.insert("raw.pageviews", rows, column_names=PAGEVIEW_COLUMNS)
-            run.rows_loaded = len(rows)
+        if rows:
+            client.insert("raw.pageviews", rows, column_names=PAGEVIEW_COLUMNS)
+        run.rows_loaded = len(rows)
 
     print(f"Loaded {len(rows)} rows into raw.pageviews")
     return 0

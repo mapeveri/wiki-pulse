@@ -19,7 +19,7 @@ class ClickHouseConfig:
     database: str = "raw"
 
     @classmethod
-    def from_env(cls) -> "ClickHouseConfig":
+    def from_env(cls) -> ClickHouseConfig:
         return cls(
             host=os.getenv("CLICKHOUSE_HOST", "localhost"),
             port=int(os.getenv("CLICKHOUSE_PORT", "8123")),
@@ -35,7 +35,7 @@ class Settings:
     wikimedia_user_agent: str
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls) -> Settings:
         return cls(
             clickhouse=ClickHouseConfig.from_env(),
             wikimedia_user_agent=os.getenv(

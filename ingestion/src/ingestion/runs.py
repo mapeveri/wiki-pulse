@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from clickhouse_connect.driver.client import Client
+from typing_extensions import Self
 
 
 def _now() -> datetime:
@@ -31,7 +32,7 @@ class RunTracker:
     status: str = "running"
     error: str = ""
 
-    def __enter__(self) -> "RunTracker":
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, exc_type, exc, _tb) -> bool:
