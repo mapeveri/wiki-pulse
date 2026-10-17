@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wikipulse-config
+data:
+  CLICKHOUSE_HOST: clickhouse
+  CLICKHOUSE_PORT: "8123"
+  CLICKHOUSE_USER: default
+  CLICKHOUSE_PASSWORD: ""
+  CLICKHOUSE_DB: raw
+  CLICKHOUSE_MARTS_DB: marts
+  WIKIMEDIA_USER_AGENT: seo-marketing-analytics-platform/0.1 (https://github.com/your-user/seo-marketing-analytics-platform)

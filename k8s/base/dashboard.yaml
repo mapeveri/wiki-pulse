@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard
+  labels:
+    app: dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dashboard
+  template:
+    metadata:
+      labels:
+        app: dashboard
+    spec:
+      containers:
+        - name: dashboard
+          image: wikipulse/dashboard:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "50m"
+              memory: 64Mi
+            limits:
+              cpu: "200m"
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard
+  labels:
+    app: dashboard
+spec:
+  selector:
+    app: dashboard
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80

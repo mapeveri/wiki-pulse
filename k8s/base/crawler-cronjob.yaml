@@ -1,0 +1,32 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: crawler-articles
+spec:
+  schedule: "0 4 * * 1"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: crawler
+              image: wikipulse/crawler:latest
+              imagePullPolicy: IfNotPresent
+              args:
+                - "--topics-file"
+                - "/config/topics.txt"
+                - "--clickhouse-url"
+                - "http://clickhouse:8123"
+              volumeMounts:
+                - name: topics
+                  mountPath: /config
+                  readOnly: true
+          volumes:
+            - name: topics
+              configMap:
+                name: topics
