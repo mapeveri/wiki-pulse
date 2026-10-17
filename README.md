@@ -72,13 +72,15 @@ and each service is containerized.
 .
 ├── docker-compose.yml         # Local ClickHouse + Redpanda
 ├── kustomization.yaml         # Kustomize entrypoint (kubectl apply -k .)
+├── Makefile                   # Developer entry points (make help)
+├── .env.example               # Runtime configuration template
 ├── infra/clickhouse/init/     # Database + raw table schema (bootstrap)
 ├── ingestion/                 # Python producers + Kafka -> ClickHouse sink
 ├── crawler/                   # Go crawler (Wikipedia HTML -> Kafka producer)
 ├── dbt/                       # SQL transformations (staging + marts)
 ├── api/                       # FastAPI metrics service
 ├── dashboard/                 # React + TypeScript dashboard
-└── k8s/                       # Kubernetes manifests
+└── k8s/                       # Kubernetes manifests (see k8s/README.md)
 ```
 
 ## Quickstart
@@ -112,8 +114,30 @@ Run `make help` to see all targets. The dbt profile is created from
 
 ### Without the Makefile
 
-Each component is a self-contained project; see the README/Dockerfile inside
-`ingestion/`, `crawler/`, `api/` and `dashboard/`.
+Each component is a self-contained project with its own Dockerfile (under
+`ingestion/`, `crawler/`, `api/`, `dbt/` and `dashboard/`); run them directly if
+you prefer. The Kubernetes deployment is documented in [`k8s/README.md`](k8s/README.md).
+
+## Configuration
+
+Copy `.env.example` to `.env` and adjust as needed. It is loaded by both the
+producers/sink and the API through `python-dotenv`.
+
+| Variable | Default | Used by |
+| --- | --- | --- |
+| `CLICKHOUSE_HOST` | `localhost` | sink, API |
+| `CLICKHOUSE_PORT` | `8123` | sink, API |
+| `CLICKHOUSE_USER` | `default` | sink, API |
+| `CLICKHOUSE_PASSWORD` | *(empty)* | sink, API |
+| `CLICKHOUSE_DB` | `raw` | sink (write target) |
+| `CLICKHOUSE_MARTS_DB` | `marts` | API (read target) |
+| `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | producers, sink |
+| `KAFKA_CONSUMER_GROUP` | `wikipulse-sink` | sink |
+| `WIKIMEDIA_USER_AGENT` | project placeholder | ingestion |
+| `API_CORS_ORIGINS` | `*` | API |
+
+The dashboard takes its API URL at build/dev time from `VITE_API_BASE_URL` (see
+`dashboard/.env.example`), defaulting to `http://localhost:8000`.
 
 ## Ingestion pipeline
 
@@ -155,6 +179,8 @@ Interactive docs at `/docs`. Main endpoints:
 
 | Endpoint | Description |
 | --- | --- |
+| `GET /` | Service metadata |
+| `GET /health` | Liveness probe |
 | `GET /metrics/overview` | Totals for the dashboard header |
 | `GET /metrics/articles` | Tracked articles with audience + content metrics |
 | `GET /metrics/articles/{article}/timeseries` | Daily audience for one article |
