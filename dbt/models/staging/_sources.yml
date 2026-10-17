@@ -1,0 +1,13 @@
+version: 2
+
+sources:
+  - name: raw
+    description: Raw tables loaded by the ingestion jobs and the crawler.
+    schema: raw
+    tables:
+      - name: pageviews
+        description: Daily audience per article (Wikimedia Pageviews API).
+      - name: articles
+        description: Content structure per article (Go crawler).
+      - name: ingestion_runs
+        description: One row per ingestion run.

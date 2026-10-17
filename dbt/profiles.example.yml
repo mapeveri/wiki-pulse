@@ -1,0 +1,20 @@
+# dbt connection profile for ClickHouse.
+# Copy this file to `profiles.yml` (git-ignored) or point DBT_PROFILES_DIR here.
+#
+#   cp profiles.example.yml profiles.yml
+#   dbt run --profiles-dir .
+
+wikipulse:
+  target: dev
+  outputs:
+    dev:
+      type: clickhouse
+      schema: default      # default database; models override it per folder
+      host: localhost
+      port: 8123
+      user: default
+      password: ""
+      secure: false
+      threads: 4
+      send_receive_timeout: 300
+      connect_timeout: 10

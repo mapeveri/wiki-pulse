@@ -1,0 +1,31 @@
+version: 2
+
+models:
+  - name: dim_articles
+    description: One row per tracked article with its content metrics.
+    columns:
+      - name: article
+        description: Article title key (underscored, as returned by the API).
+        tests: [not_null, unique]
+      - name: word_count
+        tests: [not_null]
+
+  - name: fct_article_daily_traffic
+    description: Daily audience per article joined with content metrics.
+    columns:
+      - name: project
+        tests: [not_null]
+      - name: article
+        tests: [not_null]
+      - name: event_date
+        tests: [not_null]
+      - name: views
+        tests: [not_null]
+
+  - name: mart_article_traffic
+    description: Per-article summary with week-over-week audience change.
+    columns:
+      - name: article
+        tests: [not_null, unique]
+      - name: total_views
+        tests: [not_null]

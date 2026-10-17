@@ -1,0 +1,22 @@
+version: 2
+
+models:
+  - name: stg_pageviews
+    description: Cleaned, deduplicated daily audience per article.
+    columns:
+      - name: project
+        tests: [not_null]
+      - name: article
+        tests: [not_null]
+      - name: event_date
+        tests: [not_null]
+      - name: views
+        tests: [not_null]
+
+  - name: stg_articles
+    description: Latest content metrics per article.
+    columns:
+      - name: project
+        tests: [not_null]
+      - name: article
+        tests: [not_null]
