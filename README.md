@@ -35,19 +35,35 @@ Wikipedia HTML ─► crawler (Go) ───────────────
                                                 ▼
                                            ClickHouse
                                            ├─ raw      (as ingested)
-                                           ├─ staging  (cleaned, deduped)
-                                           └─ marts    (aggregates for BI)
+                                           ├─ staging  (cleaned, deduped, dbt)
+                                           └─ marts    (aggregates, dbt)
                                                 │
                                          API (FastAPI)
                                                 │
                                         Dashboard (React + TS)
 ```
 
+Everything runs on Kubernetes through Kustomize (see [`k8s/README.md`](k8s/README.md)),
+and each service is containerized.
+
+## Tech stack
+
+| Layer | Technology |
+| --- | --- |
+| Ingestion | Python 3.10+, httpx, clickhouse-connect |
+| Crawler | Go, goquery |
+| Warehouse | ClickHouse |
+| Transformations | dbt (dbt-clickhouse) |
+| Serving | FastAPI, uvicorn |
+| Frontend | React 18, TypeScript, Vite, Recharts |
+| Platform | Docker, Kubernetes (Kustomize) |
+
 ## Repository layout
 
 ```
 .
 ├── docker-compose.yml         # Local ClickHouse
+├── kustomization.yaml         # Kustomize entrypoint (kubectl apply -k .)
 ├── infra/clickhouse/init/     # Database + raw table schema (bootstrap)
 ├── ingestion/                 # Python ingestion jobs (Wikimedia API -> ClickHouse)
 ├── crawler/                   # Go crawler (Wikipedia HTML -> ClickHouse)
@@ -59,30 +75,55 @@ Wikipedia HTML ─► crawler (Go) ───────────────
 
 ## Quickstart
 
-1. Copy the environment file and adjust it if needed:
+Prerequisites: Docker, Python 3.10+, Go 1.23+, Node 20+.
 
-   ```bash
-   cp .env.example .env
-   ```
+```bash
+# 1. Install everything (venv, python deps, dbt, go deps, node deps)
+make setup
 
-2. Start ClickHouse:
+# 2. Start ClickHouse (databases and raw tables are created on first boot)
+make up
 
-   ```bash
-   docker compose up -d clickhouse
-   ```
+# 3. Load data: audience from the API and content from the crawler
+make ingest START=20260101 END=20260131
+make crawl
 
-3. The databases (`raw`, `staging`, `marts`) and the raw tables are created
-   automatically on first boot from `infra/clickhouse/init/`.
+# 4. Build the warehouse models
+make transform
 
-## Status
+# 5. Serve the API and the dashboard
+make api        # http://localhost:8000/docs
+make dashboard  # http://localhost:5173
+```
 
-Work in progress. See the roadmap below.
+Run `make help` to see all targets. The dbt profile is created from
+`dbt/profiles.example.yml` during `make setup`.
 
-- [x] Project skeleton and local ClickHouse
-- [x] Raw schema bootstrap
-- [ ] Python ingestion (Wikimedia Pageviews)
-- [ ] Go crawler (Wikipedia HTML)
-- [ ] dbt models (staging + marts)
-- [ ] FastAPI metrics API
-- [ ] React dashboard
-- [ ] Kubernetes deployment
+### Without the Makefile
+
+Each component is a self-contained project; see the README/Dockerfile inside
+`ingestion/`, `crawler/`, `api/` and `dashboard/`.
+
+## Data model
+
+The warehouse follows a `raw -> staging -> marts` layering:
+
+- **raw** stores data exactly as ingested. The audience and article tables are
+  `ReplacingMergeTree`, so re-running an ingestion is idempotent.
+- **staging** (`dbt`) deduplicates and types the raw data.
+- **marts** (`dbt`) contains the analytical models used by the API:
+  `dim_articles`, `fct_article_daily_traffic` and `mart_article_traffic`
+  (per-article totals and week-over-week change).
+
+## API
+
+Interactive docs at `/docs`. Main endpoints:
+
+| Endpoint | Description |
+| --- | --- |
+| `GET /metrics/overview` | Totals for the dashboard header |
+| `GET /metrics/articles` | Tracked articles with audience + content metrics |
+| `GET /metrics/articles/{article}/timeseries` | Daily audience for one article |
+| `GET /metrics/top-movers?direction=up\|down` | Largest week-over-week changes |
+| `GET /metrics/trends` | Total daily audience across all articles |
+| `GET /metrics/correlation` | Content size vs. audience points |
