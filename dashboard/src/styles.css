@@ -1,0 +1,181 @@
+:root {
+  color-scheme: dark;
+  --bg: #0b0f1a;
+  --panel: #131a2b;
+  --border: #26304a;
+  --text: #e6ecff;
+  --muted: #93a1c4;
+  --accent: #5b8cff;
+  --up: #4fd1a5;
+  --down: #ff6b81;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 32px 20px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 28px;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.error {
+  color: var(--down);
+  font-size: 14px;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 20px;
+}
+
+.card h2 {
+  margin: 0 0 12px;
+  font-size: 17px;
+}
+
+.card h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stat-value {
+  font-size: 26px;
+  font-weight: 600;
+}
+
+.stat-label {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.movers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.mover-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mover-list li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    'name delta'
+    'views views';
+  gap: 2px 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.mover-name {
+  grid-area: name;
+  font-size: 14px;
+}
+
+.mover-views {
+  grid-area: views;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.delta {
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+
+.delta.up {
+  color: var(--up);
+}
+
+.delta.down {
+  color: var(--down);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+th.numeric,
+td.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+th.sortable {
+  cursor: pointer;
+  user-select: none;
+  color: var(--muted);
+}
+
+th.sortable:hover {
+  color: var(--text);
+}
+
+@media (max-width: 820px) {
+  .cards,
+  .grid,
+  .movers {
+    grid-template-columns: 1fr;
+  }
+}
