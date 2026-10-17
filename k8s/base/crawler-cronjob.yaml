@@ -20,8 +20,10 @@ spec:
               args:
                 - "--topics-file"
                 - "/config/topics.txt"
-                - "--clickhouse-url"
-                - "http://clickhouse:8123"
+                - "--kafka-brokers"
+                - "redpanda:29092"
+                - "--topic"
+                - "articles.raw"
               volumeMounts:
                 - name: topics
                   mountPath: /config

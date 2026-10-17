@@ -9,4 +9,6 @@ data:
   CLICKHOUSE_PASSWORD: ""
   CLICKHOUSE_DB: raw
   CLICKHOUSE_MARTS_DB: marts
+  KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
+  KAFKA_CONSUMER_GROUP: wikipulse-sink
   WIKIMEDIA_USER_AGENT: seo-marketing-analytics-platform/0.1 (https://github.com/your-user/seo-marketing-analytics-platform)

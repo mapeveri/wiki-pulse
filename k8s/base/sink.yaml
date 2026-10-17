@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sink
+  labels:
+    app: sink
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sink
+  template:
+    metadata:
+      labels:
+        app: sink
+    spec:
+      containers:
+        - name: sink
+          image: wikipulse/ingestion:latest
+          imagePullPolicy: IfNotPresent
+          # The ingestion image entrypoint is wikipulse-ingest; override it with
+          # the sink consumer, the only component that writes to ClickHouse.
+          command: ["wikipulse-sink"]
+          args:
+            - "--batch-size"
+            - "1000"
+            - "--flush-interval"
+            - "5"
+            - "--high-watermark"
+            - "5000"
+          envFrom:
+            - configMapRef:
+                name: wikipulse-config
+          resources:
+            requests:
+              cpu: "100m"
+              memory: 128Mi
+            limits:
+              cpu: "500m"
+              memory: 512Mi

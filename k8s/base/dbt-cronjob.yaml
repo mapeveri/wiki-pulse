@@ -1,0 +1,24 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dbt-transform
+spec:
+  # Runs after the sink has had time to persist the day's batches.
+  schedule: "0 5 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: dbt
+              image: wikipulse/dbt:latest
+              imagePullPolicy: IfNotPresent
+              args: ["run", "--project-dir", ".", "--profiles-dir", "."]
+              envFrom:
+                - configMapRef:
+                    name: wikipulse-config

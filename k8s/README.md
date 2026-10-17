@@ -10,11 +10,15 @@ editing YAML by hand.
 | --- | --- |
 | `clickhouse` StatefulSet + Service | Analytical warehouse (persistent volume) |
 | `clickhouse-init` ConfigMap | Databases and raw schema, applied on first boot |
+| `redpanda` StatefulSet + Service | Single-node Kafka-compatible broker (persistent volume) |
+| `redpanda-topics` Job | Creates the ingestion and DLQ topics |
+| `sink` Deployment | Kafka -> ClickHouse consumer (the only writer to `raw`) |
 | `api` Deployment + Service | Metrics API (2 replicas, HPA up to 6) |
 | `api` HPA | Horizontal autoscaling on CPU (70%) |
 | `dashboard` Deployment + Service | Nginx serving the built SPA |
-| `ingestion-pageviews` CronJob | Daily audience ingestion (03:00) |
-| `crawler-articles` CronJob | Weekly content crawl (Mondays 04:00) |
+| `ingestion-pageviews` CronJob | Daily audience ingestion to `pageviews.raw` (03:00) |
+| `crawler-articles` CronJob | Weekly content crawl to `articles.raw` (Mondays 04:00) |
+| `dbt-transform` CronJob | Daily `dbt run` after the sink (05:00) |
 | `topics` ConfigMap | Shared list of tracked articles |
 
 ## Build and push images
@@ -25,6 +29,7 @@ Build from the repository root (see the Dockerfiles):
 docker build -f api/Dockerfile       -t <registry>/wikipulse-api:latest .
 docker build -f ingestion/Dockerfile -t <registry>/wikipulse-ingestion:latest .
 docker build -f crawler/Dockerfile   -t <registry>/wikipulse-crawler:latest .
+docker build -f dbt/Dockerfile       -t <registry>/wikipulse-dbt:latest .
 docker build -f dashboard/Dockerfile --build-arg VITE_API_BASE_URL=/api \
   -t <registry>/wikipulse-dashboard:latest .
 docker push <registry>/wikipulse-api:latest   # ...and the rest
@@ -37,6 +42,7 @@ root (so it can reuse the ClickHouse init SQL and the topics file):
 kustomize edit set image wikipulse/api=<registry>/wikipulse-api:latest
 kustomize edit set image wikipulse/ingestion=<registry>/wikipulse-ingestion:latest
 kustomize edit set image wikipulse/crawler=<registry>/wikipulse-crawler:latest
+kustomize edit set image wikipulse/dbt=<registry>/wikipulse-dbt:latest
 kustomize edit set image wikipulse/dashboard=<registry>/wikipulse-dashboard:latest
 ```
 
@@ -49,11 +55,22 @@ kubectl apply -k .
 kubectl -n wikipulse get pods -w
 ```
 
+The `redpanda-topics` Job is immutable; after changing the topic list, delete it
+and re-apply so it runs again:
+
+```bash
+kubectl -n wikipulse delete job redpanda-topics
+kubectl apply -k .
+```
+
 ## Run the transformations
 
-dbt is run out of band (CI job, operator, or a one-off pod) against the
-`clickhouse` Service. Run it the same way as locally, pointing the profile at
-`clickhouse:8123`.
+`dbt run` runs automatically through the `dbt-transform` CronJob once the sink
+has flushed the day's batches. To run it on demand:
+
+```bash
+kubectl -n wikipulse create job --from=cronjob/dbt-transform dbt-transform-manual
+```
 
 ## Observability
 

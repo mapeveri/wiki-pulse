@@ -7,11 +7,15 @@ resources:
   - k8s/base/namespace.yaml
   - k8s/base/configmap.yaml
   - k8s/base/clickhouse.yaml
+  - k8s/base/redpanda.yaml
+  - k8s/base/redpanda-topics-job.yaml
+  - k8s/base/sink.yaml
   - k8s/base/api.yaml
   - k8s/base/api-hpa.yaml
   - k8s/base/dashboard.yaml
   - k8s/base/ingestion-cronjob.yaml
   - k8s/base/crawler-cronjob.yaml
+  - k8s/base/dbt-cronjob.yaml
 
 # Generated from the same files used by docker-compose, so the schema and the
 # tracked topics have a single source of truth.

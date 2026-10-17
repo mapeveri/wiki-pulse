@@ -1,0 +1,23 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: redpanda-topics
+spec:
+  backoffLimit: 6
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: create-topics
+          image: redpandadata/redpanda:v24.2.18
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -e
+              until rpk cluster health --brokers redpanda:29092 | grep -q 'Healthy:.*true'; do
+                echo "waiting for redpanda..."; sleep 3
+              done
+              for topic in pageviews.raw articles.raw pageviews.raw.dlq articles.raw.dlq; do
+                rpk topic create "$topic" --brokers redpanda:29092 || true
+              done
+              rpk topic list --brokers redpanda:29092
