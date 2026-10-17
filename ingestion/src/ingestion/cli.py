@@ -1,5 +1,9 @@
 """Command line interface for the ingestion jobs.
 
+These jobs are producers: they fetch data from the sources and publish one event
+per record to Redpanda. The sink (see ``ingestion.sink``) is the only component
+that writes to ClickHouse.
+
 Examples:
     wikipulse-ingest pageviews --start 20260101 --end 20260131
     wikipulse-ingest pageviews --start 20260101 --end 20260131 \
@@ -9,27 +13,18 @@ Examples:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
 import httpx
+from confluent_kafka import KafkaException
 
-from .clickhouse import get_client
 from .config import Settings
-from .runs import RunTracker
+from .kafka import PAGEVIEWS_TOPIC, get_producer
 from .sources.wikimedia import fetch_pageviews
 
 DEFAULT_PROJECT = "en.wikipedia"
-
-PAGEVIEW_COLUMNS = [
-    "project",
-    "article",
-    "access",
-    "agent",
-    "granularity",
-    "ts",
-    "views",
-]
 
 
 def _read_topics(path: Path) -> list[str]:
@@ -45,58 +40,74 @@ def _read_topics(path: Path) -> list[str]:
 
 def _ingest_pageviews(args: argparse.Namespace) -> int:
     settings = Settings.from_env()
-    if args.articles:
-        topics = args.articles
-    else:
-        topics = _read_topics(Path(args.topics_file))
-
+    topics = args.articles or _read_topics(Path(args.topics_file))
     if not topics:
         print("No topics to ingest.", file=sys.stderr)
         return 1
 
-    client = get_client(settings.clickhouse)
-    rows: list[list[object]] = []
+    producer = get_producer(settings.kafka)
+    counts = {"produced": 0, "failed": 0}
 
-    with httpx.Client(
-        headers={"User-Agent": settings.wikimedia_user_agent}, timeout=30.0
-    ) as http, RunTracker(client, "wikimedia.pageviews") as run:
-        for article in topics:
-            records = fetch_pageviews(
-                client=http,
-                project=args.project,
-                article=article,
-                start=args.start,
-                end=args.end,
-                access=args.access,
-                agent=args.agent,
-                granularity=args.granularity,
-            )
-            print(f"  {article}: {len(records)} records")
-            for r in records:
-                rows.append(
-                    [r.project, r.article, r.access, r.agent, r.granularity, r.ts, r.views]
+    def on_delivery(error, _message) -> None:
+        counts["produced" if error is None else "failed"] += 1
+
+    try:
+        with httpx.Client(
+            headers={"User-Agent": settings.wikimedia_user_agent}, timeout=30.0
+        ) as http:
+            for article in topics:
+                records = fetch_pageviews(
+                    client=http,
+                    project=args.project,
+                    article=article,
+                    start=args.start,
+                    end=args.end,
+                    access=args.access,
+                    agent=args.agent,
+                    granularity=args.granularity,
                 )
-        if rows:
-            client.insert("raw.pageviews", rows, column_names=PAGEVIEW_COLUMNS)
-        run.rows_loaded = len(rows)
+                print(f"  {article}: {len(records)} records")
+                for record in records:
+                    event = {
+                        "project": record.project,
+                        "article": record.article,
+                        "access": record.access,
+                        "agent": record.agent,
+                        "granularity": record.granularity,
+                        "ts": record.ts.isoformat(),
+                        "views": record.views,
+                    }
+                    producer.produce(
+                        PAGEVIEWS_TOPIC,
+                        key=record.article.encode(),
+                        value=json.dumps(event).encode(),
+                        callback=on_delivery,
+                    )
+                    # Serve delivery callbacks and keep the internal queue bounded.
+                    producer.poll(0)
+    except KafkaException as exc:
+        print(f"Kafka error: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        producer.flush()
 
-    print(f"Loaded {len(rows)} rows into raw.pageviews")
-    return 0
+    print(
+        f"Produced {counts['produced']} events to {PAGEVIEWS_TOPIC} "
+        f"({counts['failed']} failed)"
+    )
+    return 0 if counts["failed"] == 0 else 1
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="wikipulse-ingest",
-        description="Load audience and content data into the ClickHouse raw layer.",
+        description="Publish audience and content data to Redpanda.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
     default_topics = Path(__file__).resolve().parents[2] / "topics.txt"
 
-    pv = sub.add_parser(
-        "pageviews",
-        help="Ingest Wikimedia Pageviews into raw.pageviews",
-    )
+    pv = sub.add_parser("pageviews", help="Publish Wikimedia Pageviews to Redpanda")
     pv.add_argument("--start", required=True, help="Start date inclusive (YYYYMMDD)")
     pv.add_argument("--end", required=True, help="End date inclusive (YYYYMMDD)")
     pv.add_argument("--project", default=DEFAULT_PROJECT, help="Wikimedia project (default: en.wikipedia)")
@@ -104,9 +115,7 @@ def build_parser() -> argparse.ArgumentParser:
     pv.add_argument("--topics-file", default=str(default_topics), help="File with one article per line")
     pv.add_argument("--access", default="all-access")
     pv.add_argument("--agent", default="user")
-    pv.add_argument(
-        "--granularity", default="daily", choices=["daily", "monthly"]
-    )
+    pv.add_argument("--granularity", default="daily", choices=["daily", "monthly"])
     pv.set_defaults(func=_ingest_pageviews)
 
     return parser
