@@ -3,13 +3,14 @@ VENV := .venv
 PIP := $(VENV)/bin/pip
 DBT := $(VENV)/bin/dbt
 INGEST := $(VENV)/bin/wikipulse-ingest
+SINK := $(VENV)/bin/wikipulse-sink
 
 START ?=
 END ?=
 
 .DEFAULT_GOAL := help
 
-.PHONY: help setup up down reset ingest crawl transform dbt-test api dashboard test lint clean
+.PHONY: help setup up down reset ingest crawl sink transform dbt-test api dashboard test lint clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -22,20 +23,23 @@ setup: ## Create the venv, install Python deps and dbt, fetch Go/Node deps
 	cd crawler && go mod download
 	cd dashboard && npm install
 
-up: ## Start ClickHouse
-	docker compose up -d clickhouse
+up: ## Start ClickHouse and Redpanda (and create the topics)
+	docker compose up -d clickhouse redpanda redpanda-init
 
-down: ## Stop ClickHouse
+down: ## Stop ClickHouse and Redpanda
 	docker compose down
 
-reset: ## Stop ClickHouse and delete its volume (drops all data)
+reset: ## Stop the stack and delete the volumes (drops all data)
 	docker compose down -v
 
-ingest: ## Load Wikimedia Pageviews; needs START=YYYYMMDD END=YYYYMMDD
+ingest: ## Produce Wikimedia Pageviews events; needs START=YYYYMMDD END=YYYYMMDD
 	$(INGEST) pageviews --start $(START) --end $(END)
 
-crawl: ## Crawl article content metrics into ClickHouse
+crawl: ## Publish article content metrics to Redpanda
 	cd crawler && go run . --topics-file ../ingestion/topics.txt
+
+sink: ## Run the Kafka -> ClickHouse sink (foreground)
+	$(SINK)
 
 transform: ## Build the dbt models (staging + marts)
 	$(DBT) run --project-dir dbt --profiles-dir dbt

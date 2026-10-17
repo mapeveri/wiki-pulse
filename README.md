@@ -29,19 +29,26 @@ the crawler provides *content structure*, and the warehouse models them together
 ## Architecture
 
 ```
-Wikimedia Pageviews API ─┐
-                         ├─► ingestion (Python) ─┐
-Wikipedia HTML ─► crawler (Go) ─────────────────┤
-                                                ▼
-                                           ClickHouse
-                                           ├─ raw      (as ingested)
-                                           ├─ staging  (cleaned, deduped, dbt)
-                                           └─ marts    (aggregates, dbt)
-                                                │
-                                         API (FastAPI)
-                                                │
-                                        Dashboard (React + TS)
+Wikimedia Pageviews API ┐
+                        ├─► ingestion (Python producer) ─┐
+Wikipedia HTML ─► crawler (Go producer) ────────────────┤
+                                                         ▼
+                                    Redpanda / Kafka (topics + <topic>.dlq)
+                                                         │
+                                            sink (Python consumer)
+                                                         ▼
+                                                    ClickHouse
+                                                    ├─ raw      (as ingested)
+                                                    ├─ staging  (cleaned, deduped, dbt)
+                                                    └─ marts    (aggregates, dbt)
+                                                         │
+                                                  API (FastAPI)
+                                                         │
+                                                 Dashboard (React + TS)
 ```
+
+Every producer publishes events to a Kafka topic; the **sink** is the only
+component that writes to ClickHouse. See [Ingestion pipeline](#ingestion-pipeline).
 
 Everything runs on Kubernetes through Kustomize (see [`k8s/README.md`](k8s/README.md)),
 and each service is containerized.
@@ -52,6 +59,7 @@ and each service is containerized.
 | --- | --- |
 | Ingestion | Python 3.10+, httpx, clickhouse-connect |
 | Crawler | Go, goquery |
+| Streaming | Redpanda (Kafka API), confluent-kafka, segmentio/kafka-go |
 | Warehouse | ClickHouse |
 | Transformations | dbt (dbt-clickhouse) |
 | Serving | FastAPI, uvicorn |
@@ -62,11 +70,11 @@ and each service is containerized.
 
 ```
 .
-├── docker-compose.yml         # Local ClickHouse
+├── docker-compose.yml         # Local ClickHouse + Redpanda
 ├── kustomization.yaml         # Kustomize entrypoint (kubectl apply -k .)
 ├── infra/clickhouse/init/     # Database + raw table schema (bootstrap)
-├── ingestion/                 # Python ingestion jobs (Wikimedia API -> ClickHouse)
-├── crawler/                   # Go crawler (Wikipedia HTML -> ClickHouse)
+├── ingestion/                 # Python producers + Kafka -> ClickHouse sink
+├── crawler/                   # Go crawler (Wikipedia HTML -> Kafka producer)
 ├── dbt/                       # SQL transformations (staging + marts)
 ├── api/                       # FastAPI metrics service
 ├── dashboard/                 # React + TypeScript dashboard
@@ -81,17 +89,20 @@ Prerequisites: Docker, Python 3.10+, Go 1.23+, Node 20+.
 # 1. Install everything (venv, python deps, dbt, go deps, node deps)
 make setup
 
-# 2. Start ClickHouse (databases and raw tables are created on first boot)
+# 2. Start ClickHouse + Redpanda (databases, raw tables and topics are created)
 make up
 
-# 3. Load data: audience from the API and content from the crawler
+# 3. Run the sink: it consumes events and writes them to ClickHouse
+make sink       # leaves running in the foreground
+
+# 4. In another shell, publish data: audience from the API and content from the crawler
 make ingest START=20260101 END=20260131
 make crawl
 
-# 4. Build the warehouse models
+# 5. Build the warehouse models
 make transform
 
-# 5. Serve the API and the dashboard
+# 6. Serve the API and the dashboard
 make api        # http://localhost:8000/docs
 make dashboard  # http://localhost:5173
 ```
@@ -103,6 +114,29 @@ Run `make help` to see all targets. The dbt profile is created from
 
 Each component is a self-contained project; see the README/Dockerfile inside
 `ingestion/`, `crawler/`, `api/` and `dashboard/`.
+
+## Ingestion pipeline
+
+Producers never talk to ClickHouse. They publish one JSON event per record to a
+Kafka topic, keyed by article so an article's events stay ordered:
+
+| Producer | Topic | Trigger |
+| --- | --- | --- |
+| `wikipulse-ingest pageviews` | `pageviews.raw` | CLI / CronJob |
+| `wikipulse-crawler` (Go) | `articles.raw` | CLI / CronJob |
+
+The **sink** (`wikipulse-sink`) consumes those topics and is the only writer to
+the `raw` layer. It provides:
+
+- **batching** by size or time, and **at-least-once** delivery: offsets are
+  committed only after a successful insert, so a crash reprocesses rather than
+  loses a batch;
+- **backpressure**: partitions are paused while a batch is being persisted;
+- **dead-letter queue**: malformed records, and batches that fail to insert
+  after retries, are sent to `<topic>.dlq` with the error and original payload.
+
+Idempotency lives in the warehouse: the raw tables are `ReplacingMergeTree`, so
+reprocessing a batch does not create duplicates.
 
 ## Data model
 
