@@ -10,10 +10,10 @@ wikipulse:
     dev:
       type: clickhouse
       schema: default      # default database; models override it per folder
-      host: localhost
-      port: 8123
-      user: default
-      password: ""
+      host: "{{ env_var('CLICKHOUSE_HOST', 'localhost') }}"
+      port: "{{ env_var('CLICKHOUSE_PORT', '8123') | int }}"
+      user: "{{ env_var('CLICKHOUSE_USER', 'default') }}"
+      password: "{{ env_var('CLICKHOUSE_PASSWORD', '') }}"
       secure: false
       threads: 4
       send_receive_timeout: 300
