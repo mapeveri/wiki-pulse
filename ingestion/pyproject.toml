@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wikipulse-ingestion"
+version = "0.1.0"
+description = "Ingestion jobs that load audience and content data into ClickHouse"
+requires-python = ">=3.10"
+dependencies = [
+    "clickhouse-connect>=0.7.19,<0.9",
+    "httpx>=0.27,<0.29",
+    "python-dotenv>=1.0,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+wikipulse-ingest = "ingestion.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

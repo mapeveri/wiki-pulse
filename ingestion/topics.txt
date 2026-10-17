@@ -1,0 +1,12 @@
+# Curated topics tracked by WikiPulse.
+# One Wikipedia article title per line. Lines starting with '#' are ignored.
+Python_(programming_language)
+Kubernetes
+ClickHouse
+Search_engine_optimization
+Web_scraping
+Distributed_computing
+Machine_learning
+Data_warehouse
+Big_data
+Cloud_computing
