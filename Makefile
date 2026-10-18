@@ -4,13 +4,15 @@ PIP := $(VENV)/bin/pip
 DBT := $(VENV)/bin/dbt
 INGEST := $(VENV)/bin/wikipulse-ingest
 SINK := $(VENV)/bin/wikipulse-sink
+DLQ := $(VENV)/bin/wikipulse-dlq
 
 START ?=
 END ?=
+TOPIC ?=
 
 .DEFAULT_GOAL := help
 
-.PHONY: help setup up down reset ingest crawl sink transform dbt-test api dashboard test lint clean
+.PHONY: help setup up down reset ingest crawl sink dlq transform dbt-test api dashboard test lint clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -40,6 +42,9 @@ crawl: ## Publish article content metrics to Redpanda
 
 sink: ## Run the Kafka -> ClickHouse sink (foreground)
 	$(SINK)
+
+dlq: ## Inspect a dead-letter queue; needs TOPIC=pageviews.raw.dlq
+	$(DLQ) --topic $(TOPIC) --mode inspect
 
 transform: ## Build the dbt models (staging + marts)
 	$(DBT) run --project-dir dbt --profiles-dir dbt

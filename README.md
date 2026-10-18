@@ -150,17 +150,41 @@ Kafka topic, keyed by article so an article's events stay ordered:
 | `wikipulse-crawler` (Go) | `articles.raw` | CLI / CronJob |
 
 The **sink** (`wikipulse-sink`) consumes those topics and is the only writer to
-the `raw` layer. It provides:
+the `raw` layer.
 
-- **batching** by size or time, and **at-least-once** delivery: offsets are
-  committed only after a successful insert, so a crash reprocesses rather than
-  loses a batch;
-- **backpressure**: partitions are paused while a batch is being persisted;
-- **dead-letter queue**: malformed records, and batches that fail to insert
-  after retries, are sent to `<topic>.dlq` with the error and original payload.
+### Delivery & reliability
 
-Idempotency lives in the warehouse: the raw tables are `ReplacingMergeTree`, so
-reprocessing a batch does not create duplicates.
+- **Producers**: the Python producer is idempotent (`enable.idempotence`, which
+  forces `acks=all`), so producer-side retries cannot duplicate or reorder a
+  batch. The Go crawler uses `acks=all` but `kafka-go` has no idempotent
+  producer, so its retries are at-least-once; final deduplication relies on the
+  warehouse. Both compress with Snappy.
+- **Consumer**: manual commits (`enable.auto.commit=false`) with
+  `auto.offset.reset=earliest`, so offsets are committed only after a successful
+  insert and a new consumer never skips the backlog. `max.poll.interval.ms` plus
+  bounded `max.poll.records`/fetch sizes keep every poll cycle short enough that
+  the broker never evicts the sink for being "unresponsive", and partitions are
+  paused while a batch is persisted (backpressure).
+- **Poison messages** still advance the topic: a poll that contains only invalid
+  records commits its offsets after routing them to the DLQ, so they are not
+  replayed forever.
+- **Dead-letter queue**: malformed records, and batches that fail to insert after
+  retries, are sent to `<topic>.dlq` with the error and original payload; the
+  DLQ producer reports delivery failures instead of dropping them silently.
+- **Idempotency in the warehouse**: the raw tables are `ReplacingMergeTree`, so
+  reprocessing a batch does not create duplicates.
+
+> Outbox note: the producers are stateless fetchers — they do not write to a
+> database of their own before publishing, so there is no dual-write to make
+> atomic and the outbox pattern does not apply. The equivalent guarantee is
+> provided by idempotent consumers plus re-runnable jobs.
+
+### Dead-letter queue
+
+```bash
+make dlq TOPIC=pageviews.raw.dlq                  # inspect what was parked
+wikipulse-dlq --topic pageviews.raw.dlq --mode replay --commit   # re-publish to the source topic
+```
 
 ## Data model
 
