@@ -23,6 +23,7 @@ func NewProducer(brokers []string, topic string) *Producer {
 			Topic:        topic,
 			Balancer:     &kafka.Hash{},
 			RequiredAcks: kafka.RequireAll,
+			Compression:  kafka.Snappy,
 			BatchTimeout: 50 * time.Millisecond,
 		},
 	}

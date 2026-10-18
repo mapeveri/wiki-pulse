@@ -39,7 +39,7 @@ func run() error {
 		"seo-marketing-analytics-platform/0.1 (https://github.com/your-user/seo-marketing-analytics-platform)",
 		"User-Agent header sent to Wikipedia",
 	)
-	brokers := flag.String("kafka-brokers", "localhost:9092", "comma-separated Kafka/Redpanda brokers")
+	brokers := flag.String("kafka-brokers", defaultBrokers(), "comma-separated Kafka/Redpanda brokers")
 	topic := flag.String("topic", "articles.raw", "target topic")
 	flag.Parse()
 
@@ -53,7 +53,7 @@ func run() error {
 
 	ctx := context.Background()
 	client := wikipedia.NewClient(*userAgent)
-	producer := kafka.NewProducer(strings.Split(*brokers, ","), *topic)
+	producer := kafka.NewProducer(splitBrokers(*brokers), *topic)
 	defer producer.Close()
 
 	var (
@@ -95,10 +95,29 @@ func run() error {
 		fmt.Fprintf(os.Stderr, "%d of %d topics failed\n", failures, len(topics))
 	}
 	fmt.Printf("Published %d events to %s\n", len(topics)-failures, *topic)
-	if failures == len(topics) {
-		return fmt.Errorf("all topics failed")
+	if failures > 0 {
+		// Exit non-zero so the CronJob retries; re-publishing is safe because
+		// the raw layer is idempotent.
+		return fmt.Errorf("%d of %d topics failed", failures, len(topics))
 	}
 	return nil
+}
+
+// defaultBrokers reads the shared KAFKA_BOOTSTRAP_SERVERS variable so the
+// crawler and the Python services resolve brokers from the same configuration.
+func defaultBrokers() string {
+	if brokers := os.Getenv("KAFKA_BOOTSTRAP_SERVERS"); brokers != "" {
+		return brokers
+	}
+	return "localhost:9092"
+}
+
+func splitBrokers(brokers string) []string {
+	parts := strings.Split(brokers, ",")
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
+	return parts
 }
 
 func readTopics(path string) ([]string, error) {
