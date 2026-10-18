@@ -29,7 +29,7 @@ from datetime import date, datetime, timezone
 from uuid import uuid4
 
 from clickhouse_connect.driver.client import Client
-from confluent_kafka import Consumer, KafkaError, Message, Producer
+from confluent_kafka import Consumer, KafkaError, KafkaException, Message, Producer
 
 from .clickhouse import get_client
 from .config import Settings
@@ -120,21 +120,28 @@ class Sink:
         flush_interval: float = 5.0,
         max_retries: int = 3,
         high_watermark: int = 5000,
+        max_poll_interval_ms: int = 300_000,
     ) -> None:
         self.batch_size = batch_size
         self.flush_interval = flush_interval
         self.max_retries = max_retries
         self.high_watermark = high_watermark
+        self.max_poll_interval_ms = max_poll_interval_ms
 
-        self.consumer: Consumer = get_consumer(settings.kafka)
+        self.consumer: Consumer = get_consumer(
+            settings.kafka, max_poll_interval_ms=max_poll_interval_ms
+        )
         self.client: Client = get_client(settings.clickhouse)
-        self.dlq: Producer = get_producer(settings.kafka)
+        self.dlq: Producer = get_producer(settings.kafka, client_id="wikipulse-sink-dlq")
 
         # topic -> list of (row, message) so a failed batch can be sent to the DLQ.
         self.buffers: dict[str, list[tuple[list, Message]]] = {
             topic: [] for topic in HANDLERS
         }
         self._last_flush = time.monotonic()
+        # Set whenever a consumed message was handled (buffered or DLQ'd). Lets a
+        # poll that only produced poison messages still commit its offsets.
+        self._handled_since_commit = False
         self._running = True
 
     # -- lifecycle ---------------------------------------------------------
@@ -172,6 +179,7 @@ class Sink:
         handler = HANDLERS.get(topic)
         if handler is None:
             return
+        self._handled_since_commit = True
         try:
             event = json.loads(message.value())
             row = handler.build_row(event)
@@ -184,17 +192,21 @@ class Sink:
         return sum(len(buffer) for buffer in self.buffers.values())
 
     def _should_flush(self) -> bool:
+        if self._buffered() == 0:
+            # Nothing to persist: only commit if we routed poison messages to
+            # the DLQ, otherwise an all-DLQ poll would never advance offsets.
+            return self._handled_since_commit
         if any(len(buffer) >= self.batch_size for buffer in self.buffers.values()):
             return True
         if self._buffered() >= self.high_watermark:
             return True
-        return self._buffered() > 0 and (
-            time.monotonic() - self._last_flush >= self.flush_interval
-        )
+        return time.monotonic() - self._last_flush >= self.flush_interval
 
     # -- persistence -------------------------------------------------------
 
     def _flush_all(self) -> None:
+        if self._buffered() == 0 and not self._handled_since_commit:
+            return
         # Backpressure: stop pulling from Kafka while we persist.
         self._pause()
         flushed = False
@@ -203,13 +215,19 @@ class Sink:
                 if buffer:
                     self._flush_topic(topic, buffer)
                     flushed = True
-            # Commit only when we actually persisted a batch: committing with no
-            # stored offsets raises _NO_OFFSET (e.g. on an idle shutdown).
-            if flushed:
-                self.consumer.commit(asynchronous=False)
-                self._last_flush = time.monotonic()
+            if flushed or self._handled_since_commit:
+                self._commit()
         finally:
             self._resume()
+
+    def _commit(self) -> None:
+        try:
+            self.consumer.commit(asynchronous=False)
+        except KafkaException as exc:  # e.g. a rebalance happened mid-flush
+            print(f"offset commit failed (will retry): {exc}", file=sys.stderr)
+            return
+        self._last_flush = time.monotonic()
+        self._handled_since_commit = False
 
     def _flush_topic(self, topic: str, buffer: list[tuple[list, Message]]) -> None:
         handler = HANDLERS[topic]
@@ -253,11 +271,29 @@ class Sink:
             "key": message.key().decode() if message.key() else None,
             "value": message.value().decode(errors="replace") if message.value() else None,
         }
-        self.dlq.produce(
-            message.topic() + DLQ_SUFFIX, value=json.dumps(payload).encode()
-        )
+        dlq_topic = message.topic() + DLQ_SUFFIX
+        try:
+            self.dlq.produce(
+                dlq_topic,
+                value=json.dumps(payload).encode(),
+                callback=self._on_dlq_delivery,
+            )
+        except BufferError:
+            # Local queue is full: drain callbacks and retry once.
+            self.dlq.poll(0.5)
+            self.dlq.produce(
+                dlq_topic,
+                value=json.dumps(payload).encode(),
+                callback=self._on_dlq_delivery,
+            )
         self.dlq.poll(0)
-        print(f"  -> {message.topic()}{DLQ_SUFFIX}: {error}", file=sys.stderr)
+        print(f"  -> {dlq_topic}: {error}", file=sys.stderr)
+
+    def _on_dlq_delivery(self, error: KafkaError | None, message: Message) -> None:
+        if error is not None:
+            print(
+                f"DLQ delivery failed for {message.topic()}: {error}", file=sys.stderr
+            )
 
     # -- backpressure helpers ---------------------------------------------
 
@@ -281,6 +317,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--flush-interval", type=float, default=5.0)
     parser.add_argument("--max-retries", type=int, default=3)
     parser.add_argument("--high-watermark", type=int, default=5000)
+    parser.add_argument("--max-poll-interval-ms", type=int, default=300_000)
     args = parser.parse_args(argv)
 
     sink = Sink(
@@ -289,6 +326,7 @@ def main(argv: list[str] | None = None) -> int:
         flush_interval=args.flush_interval,
         max_retries=args.max_retries,
         high_watermark=args.high_watermark,
+        max_poll_interval_ms=args.max_poll_interval_ms,
     )
     signal.signal(signal.SIGINT, sink.stop)
     signal.signal(signal.SIGTERM, sink.stop)
