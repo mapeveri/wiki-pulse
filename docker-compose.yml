@@ -65,7 +65,7 @@ services:
       - |
         set -e
         for topic in pageviews.raw articles.raw pageviews.raw.dlq articles.raw.dlq; do
-          rpk topic create "$$topic" --brokers redpanda:29092 || true
+          rpk topic create "$$topic" --partitions 3 --brokers redpanda:29092 || true
         done
         rpk topic list --brokers redpanda:29092
 
