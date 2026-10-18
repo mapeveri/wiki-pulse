@@ -23,6 +23,7 @@ dev = [
 [project.scripts]
 wikipulse-ingest = "ingestion.cli:main"
 wikipulse-sink = "ingestion.sink:main"
+wikipulse-dlq = "ingestion.dlq:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
