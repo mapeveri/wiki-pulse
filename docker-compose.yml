@@ -44,6 +44,11 @@ services:
     ports:
       - "9092:9092" # Kafka API for host clients
       - "9644:9644" # Admin API
+    volumes:
+      # Persist the log so messages and consumer offsets survive a container
+      # restart. (This is durability against restart, not against losing the
+      # volume/host: that would require a replication factor > 1.)
+      - redpanda-data:/var/lib/redpanda/data
     healthcheck:
       test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
       interval: 5s
@@ -71,3 +76,4 @@ services:
 
 volumes:
   clickhouse-data:
+  redpanda-data:
