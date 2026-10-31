@@ -12,13 +12,14 @@ Examples:
 from __future__ import annotations
 
 import argparse
-import json
+import base64
 import sys
 import time
 from collections.abc import Iterator
 
 from confluent_kafka import Consumer, KafkaError, KafkaException, Message, Producer
 
+from .avro import decode_event
 from .config import Settings
 from .kafka import get_producer
 
@@ -58,14 +59,16 @@ def _drain(consumer: Consumer, limit: int, idle_timeout: float) -> Iterator[Mess
 def _inspect(messages: Iterator[Message]) -> None:
     count = 0
     for message in messages:
-        payload = json.loads(message.value())
+        payload = decode_event(message.value())
         count += 1
         print(
             f"[{count}] {payload.get('topic')} "
             f"partition={payload.get('partition')} offset={payload.get('offset')}"
         )
         print(f"    error: {payload.get('error')}")
-        print(f"    value: {payload.get('value')}")
+        original = payload.get("value")
+        encoded = base64.b64encode(original).decode("ascii") if original is not None else None
+        print(f"    value (base64): {encoded}")
     print(f"{count} dead-letter message(s)")
 
 
@@ -82,7 +85,7 @@ def _replay(messages: Iterator[Message], settings: Settings) -> int:
 
     replayed = 0
     for message in messages:
-        payload = json.loads(message.value())
+        payload = decode_event(message.value())
         target = payload.get("topic")
         value = payload.get("value")
         if not target or value is None:
@@ -91,7 +94,12 @@ def _replay(messages: Iterator[Message], settings: Settings) -> int:
                 file=sys.stderr,
             )
             continue
-        producer.produce(target, value=value.encode(), callback=on_delivery)
+        producer.produce(
+            target,
+            key=payload.get("key"),
+            value=value,
+            callback=on_delivery,
+        )
         producer.poll(0)
         replayed += 1
     producer.flush()

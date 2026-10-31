@@ -26,6 +26,16 @@ type Article struct {
 	CrawledAt     string `json:"crawled_at"`
 }
 
+// AvroRecord returns the wire representation required by articles.avsc.
+func (a Article) AvroRecord() map[string]interface{} {
+	return map[string]interface{}{
+		"project": a.Project, "article": a.Article, "url": a.URL, "title": a.Title,
+		"word_count": int64(a.WordCount), "section_count": int64(a.SectionCount),
+		"internal_links": int64(a.InternalLinks), "external_links": int64(a.ExternalLinks),
+		"crawled_at": a.CrawledAt,
+	}
+}
+
 // Client crawls Wikipedia articles.
 type Client struct {
 	http      *http.Client

@@ -17,6 +17,9 @@ spec:
     - name: admin
       port: 9644
       targetPort: 9644
+    - name: schema-registry
+      port: 8081
+      targetPort: 8081
 ---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -47,9 +50,12 @@ spec:
             - --check=false
             - --kafka-addr=PLAINTEXT://0.0.0.0:29092
             - --advertise-kafka-addr=PLAINTEXT://redpanda-0.redpanda.wikipulse.svc.cluster.local:29092
+            - --schema-registry-addr=0.0.0.0:8081
           ports:
             - name: kafka
               containerPort: 29092
+            - name: schema-registry
+              containerPort: 8081
             - name: admin
               containerPort: 9644
           volumeMounts:

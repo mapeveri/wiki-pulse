@@ -17,6 +17,9 @@ spec:
             - name: crawler
               image: wikipulse/crawler:latest
               imagePullPolicy: IfNotPresent
+              envFrom:
+                - configMapRef:
+                    name: wikipulse-config
               args:
                 - "--topics-file"
                 - "/config/topics.txt"

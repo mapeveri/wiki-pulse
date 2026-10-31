@@ -1,0 +1,17 @@
+{
+  "type": "record",
+  "name": "Article",
+  "namespace": "com.wikipulse.events",
+  "doc": "Content structure snapshot published to articles.raw.",
+  "fields": [
+    { "name": "project", "type": "string" },
+    { "name": "article", "type": "string" },
+    { "name": "url", "type": "string" },
+    { "name": "title", "type": "string" },
+    { "name": "word_count", "type": "long" },
+    { "name": "section_count", "type": "long" },
+    { "name": "internal_links", "type": "long" },
+    { "name": "external_links", "type": "long" },
+    { "name": "crawled_at", "type": "string", "doc": "UTC timestamp formatted as YYYY-MM-DD HH:MM:SS." }
+  ]
+}

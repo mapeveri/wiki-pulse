@@ -53,7 +53,10 @@ func run() error {
 
 	ctx := context.Background()
 	client := wikipedia.NewClient(*userAgent)
-	producer := kafka.NewProducer(splitBrokers(*brokers), *topic)
+	producer, err := kafka.NewProducer(splitBrokers(*brokers), *topic)
+	if err != nil {
+		return err
+	}
 	defer producer.Close()
 
 	var (

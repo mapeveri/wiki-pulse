@@ -41,8 +41,10 @@ services:
       # PLAINTEXT listener for in-network clients; OUTSIDE for host clients.
       - --kafka-addr=PLAINTEXT://0.0.0.0:29092,OUTSIDE://0.0.0.0:9092
       - --advertise-kafka-addr=PLAINTEXT://redpanda:29092,OUTSIDE://localhost:9092
+      - --schema-registry-addr=0.0.0.0:8081
     ports:
       - "9092:9092" # Kafka API for host clients
+      - "8081:8081" # Schema Registry API
       - "9644:9644" # Admin API
     volumes:
       # Persist the log so messages and consumer offsets survive a container

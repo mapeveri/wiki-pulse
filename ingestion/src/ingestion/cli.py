@@ -13,7 +13,6 @@ Examples:
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -21,6 +20,7 @@ import httpx
 from confluent_kafka import KafkaException
 
 from .config import Settings
+from .avro import encode_event
 from .kafka import PAGEVIEWS_TOPIC, get_producer
 from .sources.wikimedia import fetch_pageviews
 
@@ -80,13 +80,13 @@ def _ingest_pageviews(args: argparse.Namespace) -> int:
                     producer.produce(
                         PAGEVIEWS_TOPIC,
                         key=record.article.encode(),
-                        value=json.dumps(event).encode(),
+                        value=encode_event(PAGEVIEWS_TOPIC, "pageviews", event),
                         callback=on_delivery,
                     )
                     # Serve delivery callbacks and keep the internal queue bounded.
                     producer.poll(0)
-    except KafkaException as exc:
-        print(f"Kafka error: {exc}", file=sys.stderr)
+    except (KafkaException, httpx.HTTPError) as exc:
+        print(f"Kafka / Schema Registry error: {exc}", file=sys.stderr)
         return 1
     finally:
         producer.flush()

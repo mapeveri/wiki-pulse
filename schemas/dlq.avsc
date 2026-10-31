@@ -1,0 +1,14 @@
+{
+  "type": "record",
+  "name": "DeadLetter",
+  "namespace": "com.wikipulse.events",
+  "doc": "Failure metadata and original Kafka bytes, sent to a topic-specific DLQ.",
+  "fields": [
+    { "name": "error", "type": "string" },
+    { "name": "topic", "type": "string" },
+    { "name": "partition", "type": "int" },
+    { "name": "offset", "type": "long" },
+    { "name": "key", "type": ["null", "bytes"], "default": null },
+    { "name": "value", "type": ["null", "bytes"], "default": null }
+  ]
+}

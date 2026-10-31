@@ -10,7 +10,7 @@ editing YAML by hand.
 | --- | --- |
 | `clickhouse` StatefulSet + Service | Analytical warehouse (persistent volume) |
 | `clickhouse-init` ConfigMap | Databases and raw schema, applied on first boot |
-| `redpanda` StatefulSet + Service | Single-node Kafka-compatible broker (persistent volume) |
+| `redpanda` StatefulSet + Service | Single-node Kafka-compatible broker and Schema Registry (persistent volume) |
 | `redpanda-topics` Job | Creates the ingestion and DLQ topics |
 | `sink` Deployment | Kafka -> ClickHouse consumer (the only writer to `raw`) |
 | `api` Deployment + Service | Metrics API (2 replicas, HPA up to 6) |
