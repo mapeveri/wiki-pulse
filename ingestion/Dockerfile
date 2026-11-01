@@ -10,6 +10,7 @@ WORKDIR /app
 
 COPY ingestion/pyproject.toml ./ingestion/pyproject.toml
 COPY ingestion/src ./ingestion/src
+COPY schemas ./schemas
 RUN pip install ./ingestion
 
 # Default topics file; can be overridden with --topics-file.

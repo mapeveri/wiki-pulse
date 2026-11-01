@@ -19,7 +19,6 @@ Guarantees demonstrated here:
 from __future__ import annotations
 
 import argparse
-import json
 import signal
 import sys
 import time
@@ -31,6 +30,7 @@ from uuid import uuid4
 from clickhouse_connect.driver.client import Client
 from confluent_kafka import Consumer, KafkaError, KafkaException, Message, Producer
 
+from .avro import decode_event, encode_event
 from .clickhouse import get_client
 from .config import Settings
 from .kafka import (
@@ -181,9 +181,9 @@ class Sink:
             return
         self._handled_since_commit = True
         try:
-            event = json.loads(message.value())
+            event = decode_event(message.value())
             row = handler.build_row(event)
-        except (ValueError, KeyError, TypeError) as exc:
+        except (ValueError, KeyError, TypeError, EOFError) as exc:
             self._send_to_dlq(message, exc)
             return
         self.buffers[topic].append((row, message))
@@ -268,14 +268,14 @@ class Sink:
             "topic": message.topic(),
             "partition": message.partition(),
             "offset": message.offset(),
-            "key": message.key().decode() if message.key() else None,
-            "value": message.value().decode(errors="replace") if message.value() else None,
+            "key": message.key(),
+            "value": message.value(),
         }
         dlq_topic = message.topic() + DLQ_SUFFIX
         try:
             self.dlq.produce(
                 dlq_topic,
-                value=json.dumps(payload).encode(),
+                value=encode_event(dlq_topic, "dlq", payload),
                 callback=self._on_dlq_delivery,
             )
         except BufferError:
@@ -283,7 +283,7 @@ class Sink:
             self.dlq.poll(0.5)
             self.dlq.produce(
                 dlq_topic,
-                value=json.dumps(payload).encode(),
+                value=encode_event(dlq_topic, "dlq", payload),
                 callback=self._on_dlq_delivery,
             )
         self.dlq.poll(0)

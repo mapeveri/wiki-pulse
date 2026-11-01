@@ -49,6 +49,7 @@ Wikipedia HTML ─► crawler (Go producer) ────────────
 
 Every producer publishes events to a Kafka topic; the **sink** is the only
 component that writes to ClickHouse. See [Ingestion pipeline](#ingestion-pipeline).
+Events are serialized as Avro binary using the contracts under [`schemas/`](schemas/).
 
 Everything runs on Kubernetes through Kustomize (see [`k8s/README.md`](k8s/README.md)),
 and each service is containerized.
@@ -59,7 +60,7 @@ and each service is containerized.
 | --- | --- |
 | Ingestion | Python 3.10+, httpx, clickhouse-connect |
 | Crawler | Go, goquery |
-| Streaming | Redpanda (Kafka API), confluent-kafka, segmentio/kafka-go |
+| Streaming | Redpanda (Kafka API), Avro, confluent-kafka, segmentio/kafka-go |
 | Warehouse | ClickHouse |
 | Transformations | dbt (dbt-clickhouse) |
 | Serving | FastAPI, uvicorn |
@@ -77,6 +78,7 @@ and each service is containerized.
 ├── infra/clickhouse/init/     # Database + raw table schema (bootstrap)
 ├── ingestion/                 # Python producers + Kafka -> ClickHouse sink
 ├── crawler/                   # Go crawler (Wikipedia HTML -> Kafka producer)
+├── schemas/                    # Avro event contracts used across producers and sink
 ├── dbt/                       # SQL transformations (staging + marts)
 ├── api/                       # FastAPI metrics service
 ├── dashboard/                 # React + TypeScript dashboard
@@ -133,6 +135,7 @@ producers/sink and the API through `python-dotenv`.
 | `CLICKHOUSE_MARTS_DB` | `marts` | API (read target) |
 | `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | producers, sink |
 | `KAFKA_CONSUMER_GROUP` | `wikipulse-sink` | sink |
+| `SCHEMA_REGISTRY_URL` | `http://localhost:8081` | producers, sink, DLQ CLI |
 | `WIKIMEDIA_USER_AGENT` | project placeholder | ingestion |
 | `API_CORS_ORIGINS` | `*` | API |
 
@@ -141,8 +144,11 @@ The dashboard takes its API URL at build/dev time from `VITE_API_BASE_URL` (see
 
 ## Ingestion pipeline
 
-Producers never talk to ClickHouse. They publish one JSON event per record to a
-Kafka topic, keyed by article so an article's events stay ordered:
+Producers never talk to ClickHouse. They publish one Avro binary event per
+record to a Kafka topic, keyed by article so an article's events stay ordered.
+The producers register schemas in Redpanda Schema Registry and publish
+Confluent wire-format Avro. The sink resolves each message's schema ID before
+decoding; DLQ records use their own Avro envelope schema:
 
 | Producer | Topic | Trigger |
 | --- | --- | --- |

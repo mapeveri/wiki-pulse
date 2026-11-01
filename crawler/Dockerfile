@@ -10,6 +10,9 @@ RUN CGO_ENABLED=0 go build -trimpath -o /out/crawler .
 
 FROM gcr.io/distroless/static-debian12:nonroot
 
+WORKDIR /app
 COPY --from=build /out/crawler /crawler
+COPY schemas /app/schemas
+ENV WIKIPULSE_SCHEMA_DIR=/app/schemas
 
 ENTRYPOINT ["/crawler"]
